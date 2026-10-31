@@ -2,6 +2,12 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs';
 import { PDFParse } from 'pdf-parse';
+import "dotenv/config";
+import { GoogleGenAI } from '@google/genai';
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY })
 
 
 const app = express();
@@ -28,13 +34,20 @@ app.post("/upload", upload.single('pdf'), async (req, res) => {
 
         // 3. Access the text property from the result
         const text = result.text;
-
+        // console.log(text)
         // Clean up: destroy parser and remove temp file
+
         await parser.destroy();
         fs.unlinkSync(req.file.path);
+        const chunks = text.split('\n');
 
-        res.send(text);
-
+        const responce = await ai.models.generateContent({
+            model: 'gemini-3.5-flash-lite',
+            contents: `Explain the pdf in simple text ${chunks}`,
+        })
+        res.json({
+            data: responce.text
+        })
     } catch (error) {
         console.error("Error parsing PDF:", error);
         res.status(500).send("Error parsing PDF");

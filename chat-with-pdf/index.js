@@ -18,6 +18,16 @@ const upload = multer({ dest: './uploads' });
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+
+async function createEmbeddings(text) {
+    const response = await ai.models.embedContent({
+        model: 'gemini-embedding-2',
+        contents: text,
+    });
+    console.log("embedding responce", response.embeddings[0].values)
+    return response.embeddings[0].values
+}
+
 app.post("/upload", upload.single('pdf'), async (req, res) => {
     try {
         if (!req.file) {
@@ -40,12 +50,23 @@ app.post("/upload", upload.single('pdf'), async (req, res) => {
         await parser.destroy();
         fs.unlinkSync(req.file.path);
         const chunks = text.split('\n');
+        // console.log("chunks", chunks)
+
+        const embedding = await createEmbeddings(chunks[0])
+
+        console.log("embedding", embedding)
+
+        const question = req.body.question
+        const matchedChunks = chunks.find((chunk) => chunk.toLocaleLowerCase().includes(question))
+        console.log("matchedChunks", matchedChunks);
 
         const responce = await ai.models.generateContent({
             model: 'gemini-3.5-flash-lite',
-            contents: `Explain the pdf in simple text ${chunks}`,
-        })
+            contents: `Answer the questions using the context: ${matchedChunks} and Question is: ${question}`,
+        });
+
         res.json({
+            matchedChunks,
             data: responce.text
         })
     } catch (error) {

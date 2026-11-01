@@ -24,8 +24,17 @@ async function createEmbeddings(text) {
         model: 'gemini-embedding-2',
         contents: text,
     });
-    console.log("embedding responce", response.embeddings[0].values)
+    // console.log("embedding responce", response.embeddings[0].values)
     return response.embeddings[0].values
+}
+
+function cosineSimilarity(vecA, vecB) {
+    let dotProduct = 0;
+
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i]
+    }
+    return dotProduct
 }
 
 app.post("/upload", upload.single('pdf'), async (req, res) => {
@@ -49,26 +58,46 @@ app.post("/upload", upload.single('pdf'), async (req, res) => {
 
         await parser.destroy();
         fs.unlinkSync(req.file.path);
-        const chunks = text.split('\n');
+        const chunks = text.split('\n').filter((chunk) => chunk.trim() != '');
         // console.log("chunks", chunks)
 
-        const embedding = await createEmbeddings(chunks[0])
+        // const embedding = await createEmbeddings(chunks[0])
 
-        console.log("embedding", embedding)
+        // console.log("embedding", embedding)
 
-        const question = req.body.question
-        const matchedChunks = chunks.find((chunk) => chunk.toLocaleLowerCase().includes(question))
-        console.log("matchedChunks", matchedChunks);
+        const chunkEmbedding = [];
+        for (let chunk of chunks) {
+            const embedding = await createEmbeddings(chunks);
+
+            chunkEmbedding.push({
+                text: chunk,
+                embedding
+            })
+        }
+
+        const question = req.body.question;
+        const questionEmbedding = await createEmbeddings(question);
+        // const matchedChunks = chunks.find((chunk) => chunk.toLocaleLowerCase().includes(question))
+        // console.log("matchedChunks", matchedChunks);
+
+        let bestChunk = null;
+        let bestScore = -Infinity;
+
+        for (const items of chunkEmbedding) {
+            const score = cosineSimilarity(questionEmbedding, items.question);
+            if (score > bestScore) {
+                bestChunk = items.text;
+                bestScore = score;
+            }
+        }
+        console.log(bestScore)
 
         const responce = await ai.models.generateContent({
             model: 'gemini-3.5-flash-lite',
-            contents: `Answer the questions using the context: ${matchedChunks} and Question is: ${question}`,
+            contents: `Answer the questions using the context: ${bestChunk} and Question is: ${question}`,
         });
 
-        res.json({
-            matchedChunks,
-            data: responce.text
-        })
+        res.send(responce.text)
     } catch (error) {
         console.error("Error parsing PDF:", error);
         res.status(500).send("Error parsing PDF");
